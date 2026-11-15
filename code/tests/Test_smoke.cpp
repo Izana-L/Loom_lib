@@ -21,6 +21,13 @@ namespace
 		thread.join();
 		CHECK(ran);
 	}
+	void Test_SpinLock()
+	{
+		bool ran = false;
+		std::thread thread([&ran] { ran = true; });
+		thread.join();
+		CHECK(ran);
+	}
 }
 
 int main()
