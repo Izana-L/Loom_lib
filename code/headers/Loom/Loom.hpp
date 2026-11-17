@@ -4,3 +4,5 @@
 // El test Loom_umbrella_complete falla si aquí falta alguno de code/headers.
 
 #include <Loom/Version.hpp>
+#include <Loom/Chase_Lev_Deque.hpp>
+#include <Loom/Task.hpp>

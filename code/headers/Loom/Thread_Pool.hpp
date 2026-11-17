@@ -2,7 +2,7 @@
 
 #include <deque>
 #include <condition_variable>
-#include <Task.hpp>
+#include <Loom/Task.hpp>
 #include <thread>
 #include <vector>
 #include <mutex>
@@ -55,7 +55,7 @@ namespace Loom
         void Shutdown();
         void Help_until_zero(const std::atomic<int>& pending)
         {
-        	std::unique_lock lock(mutex);
+        	/*std::unique_lock lock(mutex);
         	while (pending.load() != 0)
         	{
         		if (queue.empty())
@@ -68,7 +68,7 @@ namespace Loom
         		lock.unlock();
         		Run(task);              // siempre sin el mutex tomado
         		lock.lock();
-        	}
+         	}*/
         }
 
     };

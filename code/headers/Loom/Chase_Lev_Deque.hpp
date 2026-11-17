@@ -27,10 +27,10 @@ namespace Loom
 
         static constexpr std::size_t cache_line_size = 64;
 
-        const std::unique_ptr<std::atomic<Type>[]> slots;
+
         const std::int64_t capacity;
         const std::int64_t mask;
-
+        const std::unique_ptr<std::atomic<Type>[]> slots;
         alignas(cache_line_size) std::atomic<std::int64_t> top{0};
         alignas(cache_line_size) std::atomic<std::int64_t> bottom{0};
         std::int64_t cached_top{0};
@@ -62,14 +62,14 @@ namespace Loom
 
         [[nodiscard]]  bool Push(const Type& _value) noexcept
         {
-            const std::int64_t temp_bottom = bottom.load(std::memory_order_relaxed);
-            if (temp_bottom - cached_top == capacity)
+            const std::int64_t _temp_bottom = bottom.load(std::memory_order_relaxed);
+            if (_temp_bottom - cached_top == capacity)
             {
                 cached_top = top.load(std::memory_order::acquire);
-                if (temp_bottom - cached_top == capacity) { return false; }
+                if (_temp_bottom - cached_top == capacity) { return false; }
             }
-            slots[static_cast<size_t>(temp_bottom & mask)].store(_value, std::memory_order_relaxed);
-            bottom.store(temp_bottom + 1, std::memory_order_release);
+            slots[static_cast<size_t>(_temp_bottom & mask)].store(_value, std::memory_order_relaxed);
+            bottom.store(_temp_bottom + 1, std::memory_order_release);
             return true;
         }
         [[nodiscard]] std::optional<Type> Pop() noexcept
@@ -87,11 +87,11 @@ namespace Loom
         }
         [[nodiscard]] Steal_result Steal() noexcept
         {
-            std::int64_t temp_top = top.load(std::memory_order::seq_cst);
-            if (temp_top >= bottom.load(std::memory_order::seq_cst) )
+            std::int64_t _temp_top = top.load(std::memory_order::seq_cst);
+            if (_temp_top >= bottom.load(std::memory_order::seq_cst) )
              return {Steal_status::Empty};
-            const Type _value = slots[static_cast<size_t>(temp_top & mask)].load(std::memory_order_relaxed);
-            return top.compare_exchange_strong(temp_top, temp_top + 1) ? Steal_result{Steal_status::Stolen, _value} :
+            const Type _value = slots[static_cast<size_t>(_temp_top & mask)].load(std::memory_order_relaxed);
+            return top.compare_exchange_strong(_temp_top, _temp_top + 1) ? Steal_result{Steal_status::Stolen, _value} :
                                                                          Steal_result{Steal_status::Lost_race};
         }
 

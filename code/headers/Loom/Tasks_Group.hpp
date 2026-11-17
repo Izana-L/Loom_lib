@@ -1,4 +1,4 @@
-#include "Loom/Thread_Pool.hpp"
+#include <Loom/Thread_Pool.hpp>
 class Group
 {
 public:
@@ -17,11 +17,11 @@ public:
 	Group(const Group&) = delete;
 	Group& operator=(const Group&) = delete;
 
-	void Submit(std::function<void()> function)
+	/*void Submit(std::function<void()> function)
 	{
 		pending.fetch_add(1);                              // primero sube el contador
 		pool.Push(Task{std::move(function), &pending});    // después la tarea se hace visible
-	}
+		}*/
 
 	void Wait()
 	{
