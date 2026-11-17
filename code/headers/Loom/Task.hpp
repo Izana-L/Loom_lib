@@ -5,11 +5,13 @@
 #include <cstddef>
 #include <new>
 #include <utility>
+
 namespace Loom
 {
     class Task
     {
     private:
+
         static constexpr std::size_t storage_size = 48;
         static constexpr std::size_t storage_alignment = 16;
         alignas(storage_alignment) std::byte storage[storage_size];
