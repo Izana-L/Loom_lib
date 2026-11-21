@@ -14,13 +14,8 @@ namespace Loom
         Parker& operator=(const Parker&) = delete;
         void Park() noexcept
         {
-            for (;;)
-            {
-                std::uint32_t expected = 1;
-                if (wake_notice.compare_exchange_strong(expected, 0u, std::memory_order_acquire,std::memory_order_relaxed))
-                    return;
-                wake_notice.wait(0u, std::memory_order_acquire);
-            }
+            while (wake_notice.exchange(0, std::memory_order_acquire) == 0)
+                wake_notice.wait(0u, std::memory_order_relaxed);
         }
 
         void Unpark() noexcept

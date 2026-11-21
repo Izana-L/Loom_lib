@@ -21,8 +21,6 @@ namespace Loom
         static_assert(std::is_trivially_copyable_v<Type>, "T must be trivially copyable");
         static_assert(std::atomic<Type>::is_always_lock_free, "std::atomic<T> must be lock-free");
 
-
-
     private:
 
         static constexpr std::size_t cache_line_size = 64;
@@ -44,6 +42,12 @@ namespace Loom
         }
 
     public:
+
+        [[nodiscard]] bool Empty() const noexcept
+        {
+            std::int64_t _temp_top = top.load(std::memory_order_acquire);
+            return _temp_top >= bottom.load(std::memory_order_acquire);
+        }
 
         struct Steal_result
         {
@@ -87,8 +91,8 @@ namespace Loom
         }
         [[nodiscard]] Steal_result Steal() noexcept
         {
-            std::int64_t _temp_top = top.load(std::memory_order::seq_cst);
-            if (_temp_top >= bottom.load(std::memory_order::seq_cst) )
+            std::int64_t _temp_top = top.load(std::memory_order_seq_cst);
+            if (_temp_top >= bottom.load(std::memory_order_seq_cst) )
              return {Steal_status::Empty};
             const Type _value = slots[static_cast<size_t>(_temp_top & mask)].load(std::memory_order_relaxed);
             return top.compare_exchange_strong(_temp_top, _temp_top + 1) ? Steal_result{Steal_status::Stolen, _value} :
