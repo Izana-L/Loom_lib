@@ -31,7 +31,7 @@ namespace Loom
         std::atomic<int>* pending = nullptr;
 
         template <typename F>
-        Task(F&& function, std::atomic<int>* group_pending) noexcept: pending(group_pending)
+        Task(F&& function, std::atomic<int>& group_pending) noexcept: pending(&group_pending)
         {
 
             using Callable = std::decay_t<F>;

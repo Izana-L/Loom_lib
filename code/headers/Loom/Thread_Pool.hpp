@@ -1,11 +1,11 @@
 #pragma once
 
 #include <cassert>
-#include <deque>
-#include <condition_variable>
+#include <cstdint>
 #include <Loom/Task.hpp>
 #include <Loom/Chase_Lev_Deque.hpp>
 #include <Loom/Parker.hpp>
+#include <sys/types.h>
 #include <thread>
 #include <vector>
 #include <memory>
@@ -13,6 +13,7 @@
 
 namespace Loom
 {
+    using Task_deque = Chase_Lev_Deque<Task*>;
     class Thread_Pool;
     struct Pool_Config
     {
@@ -27,12 +28,13 @@ namespace Loom
         struct Thread_identity
         {
             Thread_Pool* joined_pool = nullptr;
-            int participant_index = no_participant;
+            int32_t participant_index = no_participant;
         };
     }
 
     class Thread_Pool
     {
+         friend class Thread_Registration;
          static constexpr unsigned max_workers = 64;
     public:
 
@@ -44,8 +46,7 @@ namespace Loom
         void Schedule_task(Task* task) noexcept;
         bool Try_run_one_task() noexcept;
 
-        [[nodiscard]] bool Register_current_thread() noexcept;
-        void Unregister_current_thread() noexcept;
+
 
         static Thread_Pool* Pool_of_this_thread() noexcept;
         unsigned Worker_count() const noexcept{return worker_count;}
@@ -55,7 +56,7 @@ namespace Loom
 
         struct Participant
         {
-            Chase_Lev_Deque<Task*> work_deque;
+            Task_deque work_deque;
             std::atomic<bool> is_registered{false};
             Parker parker;
             std::uint32_t random_state;
@@ -85,6 +86,10 @@ namespace Loom
         void Wake_one_idle_worker() noexcept;
         void Announce_idle_and_park(unsigned worker_index) noexcept;
         void Stop_and_join_workers() noexcept;
+        Task* Steal_from(unsigned victim_index) noexcept;
+
+        [[nodiscard]] int Register_current_thread() noexcept;
+        void Unregister_current_thread() noexcept;
 
         static unsigned int Resolve_worker_count(unsigned requested_worker_count)noexcept
         {
@@ -111,5 +116,6 @@ namespace Loom
             }
             return true;
         }
+
     };
 }
