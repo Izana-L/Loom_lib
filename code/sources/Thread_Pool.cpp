@@ -3,6 +3,7 @@
 #include <Loom/Thread_Pool.hpp>
 #include <atomic>
 #include <cassert>
+#include <bit>
 #include <cstdint>
 
 #if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
@@ -29,7 +30,32 @@ namespace
 #endif
 
 	}
+	std::uint32_t Next_random(std::uint32_t&_random_state) noexcept
+	{
+        _random_state ^= _random_state << 13;
+        _random_state ^= _random_state >> 17;
+        _random_state ^= _random_state << 5;
+        return _random_state;
+	}
+    constexpr unsigned spin_pause_rounds = 6;
+    constexpr unsigned spin_yield_rounds = 3;
+    constexpr unsigned spin_total_rounds = spin_pause_rounds + spin_yield_rounds;
+    static_assert(spin_pause_rounds < 32, "1u << round would overflow");
+    static_assert(spin_total_rounds > 0, "Spin_for_task needs at least one round");
 
+
+    void Back_off(unsigned round) noexcept
+    {
+        if (round < spin_pause_rounds)
+        {
+            const unsigned pause_count = 1u << round;
+            for (unsigned i = 0; i < pause_count; ++i) Cpu_pause();
+        }
+        else
+        {
+            std::this_thread::yield();
+        }
+    }
 
 }
 namespace Loom
@@ -117,12 +143,14 @@ namespace Loom
     void Thread_Pool::Run_and_complete(Task* task) noexcept
     {
             assert(task != nullptr && "Run_and_complete called with a null Task");
+            std::atomic<int>* group_pending = task->pending;
+            assert(group_pending != nullptr && "Task has no pending counter");
             task->Run();
-            task->pending->fetch_sub(1,std::memory_order_release);
-
+            group_pending->fetch_sub(1,std::memory_order_release);
     }
     Task* Thread_Pool::Steal_from(unsigned victim_index) noexcept
 	{
+	    assert(victim_index < participant_count);
 	    Task_deque::Steal_result result{Steal_status::Empty};
 		do
 		{   result = participants[victim_index]->work_deque.Steal();
@@ -134,20 +162,70 @@ namespace Loom
 	}
     Task* Thread_Pool::Find_task_by_stealing(unsigned thief_index) noexcept
     {
-        std::uint32_t _ramdom_state = participants[thief_index]->random_state;
-        _ramdom_state ^= _ramdom_state << 13;
-        _ramdom_state ^= _ramdom_state >> 17;
-        _ramdom_state ^= _ramdom_state << 5;
-        participants[thief_index]->random_state = _ramdom_state ;
-        unsigned _slot =  static_cast<uint32_t>((std::uint64_t{_ramdom_state}* participant_count) >> 32);
+        Participant& thief = *participants[thief_index];
+        const unsigned last_victim = thief.last_successful_victim;
+        if(thief_index != last_victim)
+        {
+            Task* _stolen_task = Steal_from(last_victim);
+            if (_stolen_task) return _stolen_task;
+        }
+        std::uint32_t _random_state = Next_random(thief.random_state);
+        unsigned _slot =  static_cast<uint32_t>((std::uint64_t{_random_state}* participant_count) >> 32);
         for (unsigned index = 0; index < participant_count; ++index)
         {
             if (++_slot == participant_count) _slot = 0;
-            if (thief_index == _slot) continue;
+            if (thief_index == _slot || _slot == last_victim) continue;
             Task* _stolen_task = Steal_from(_slot);
-            if (_stolen_task) return _stolen_task;
+            if (_stolen_task)
+            {
+                 thief.last_successful_victim = _slot;
+                 return _stolen_task;
+            }
         }
         return nullptr;
     }
+    bool Thread_Pool::Wake_one_idle_worker() noexcept
+    {
+        std::uint64_t worker_mask = idle_worker_mask.load();
+        while (worker_mask != 0)
+        {
+            const unsigned i = static_cast<unsigned>(std::countr_zero(worker_mask));
+            const std::uint64_t bit = std::uint64_t{1} << i;
+            const std::uint64_t previous = idle_worker_mask.fetch_and(~bit);
+            if (previous & bit)
+            {
+                searching_worker_count.fetch_add(1);
+                participants[i]->parker.Unpark();
+                return true;
+            }
+            worker_mask = previous & ~bit;
+        }
+        return false;
+    }
+    void Thread_Pool::Start_searching() noexcept
+    {
+        [[maybe_unused]] const std::int32_t previous = searching_worker_count.fetch_add(1);
+        assert(previous >= 0 && "searching_worker_count was negative: a searcher was decremented more times than it was counted");
+    }
+    void Thread_Pool::Stop_searching() noexcept
+    {
+       const std::int32_t searching_workers = searching_worker_count.fetch_sub(1);
+       assert(searching_workers >= 1 && "Stop_searching called by a thread that was not counted as searching");
+       if (searching_workers == 1)
+       {
+           Wake_one_idle_worker();
+       }
+    }
 
+    Task* Thread_Pool::Spin_for_task(unsigned int worker_index) noexcept
+    {
+        for (unsigned round = 0; round < spin_total_rounds; ++round)
+            {
+                if (shutdown_requested.load()) return nullptr;
+                if (Task* task = Find_task_by_stealing(worker_index)) return task;
+                if (round + 1 == spin_total_rounds) break;
+                Back_off(round);
+            }
+            return nullptr;
+    }
 }

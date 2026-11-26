@@ -48,7 +48,7 @@ namespace Loom
 
 
 
-        static Thread_Pool* Pool_of_this_thread() noexcept;
+        static Thread_Pool* Pool_of_this_thread() noexcept{return this_thread_identity.joined_pool;}
         unsigned Worker_count() const noexcept{return worker_count;}
 
     private:
@@ -76,16 +76,19 @@ namespace Loom
         const unsigned participant_count;
         std::vector<std::unique_ptr<Participant>> participants;
         alignas(64) std::atomic<std::uint64_t> idle_worker_mask{0};
-        alignas(64) std::atomic<int> searching_worker_count{0};
+        alignas(64) std::atomic<std::int32_t> searching_worker_count{0};
         std::atomic<bool> shutdown_requested{false};
         std::vector<std::thread> worker_threads;
 
-        void Worker_loop(unsigned worker_index) noexcept;
-        static void Run_and_complete(Task* task) noexcept;
+        void Worker_loop(unsigned worker_index) noexcept; //
+        static void Run_and_complete(Task* task) noexcept;//
         Task* Find_task_by_stealing(unsigned thief_index) noexcept;
-        void Wake_one_idle_worker() noexcept;
+        bool Wake_one_idle_worker() noexcept;
+        void Start_searching() noexcept;
+        void Stop_searching() noexcept;
         void Announce_idle_and_park(unsigned worker_index) noexcept;
         void Stop_and_join_workers() noexcept;
+        Task* Spin_for_task(unsigned worker_index) noexcept;
         Task* Steal_from(unsigned victim_index) noexcept;
 
         [[nodiscard]] int Register_current_thread() noexcept;
